@@ -27,7 +27,7 @@ export const FILE_KINDS = {
 // One-tap demo logins. These map to real Supabase Auth accounts.
 // Passwords are intentionally simple for demonstration only.
 export const DEMO_LOGINS = [
-  { name: "Asiribo Olawale", email: "olawale@procuredesk.demo", password: "Demo1234!", role: "admin", dept: "contracts", initials: "AA" },
+  { name: "Asiribo Olawale", email: "adunni@procuredesk.demo", password: "Demo1234!", role: "admin", dept: "contracts", initials: "AA" },
   { name: "Tunde Bakare", email: "tunde@procuredesk.demo", password: "Demo1234!", role: "editor", dept: "sourcing", initials: "TB" },
   { name: "Folake Ogunsola", email: "folake@procuredesk.demo", password: "Demo1234!", role: "viewer", dept: "vendors", initials: "FO" },
 ];
