@@ -1,4 +1,4 @@
-# procuredesk-dms# ProcureDesk — Cloud Document Management System
+# ProcureDesk — Cloud Document Management System
 
 A cloud-based **Document Management System (DMS)** for procurement-focused small businesses. It keeps tenders, contracts, vendor records, purchase orders, and standard operating procedures (SOPs) in one secure, searchable place — so institutional knowledge and documents stay with the business when staff move on.
 
@@ -9,6 +9,7 @@ Built with **React + Vite** on the front end and **Supabase** (PostgreSQL, Auth,
 This is a *hybrid* DMS: it manages both uploaded document **files** and written **SOPs**, with full document-management machinery around them.
 
 - **Real authentication** — email/password sign-in via Supabase Auth, with one-tap demo profiles.
+- **Admin user management** — administrators provision new accounts (name, email, role, department) from a Users screen. Creation runs through a secure server-side Edge Function, so the privileged key never touches the browser.
 - **Role-based access** — Administrator / Editor / Viewer, enforced by Postgres **Row Level Security** (not just the UI).
 - **Document library** — sortable list with type, owner, last-updated, and view counts.
 - **Folders** — hierarchical folder tree (with sub-folders) organised by procurement department.
@@ -31,6 +32,14 @@ All three accounts use the password **Demo1234!**
 | folake@procuredesk.demo    | Viewer        | Browse/read published docs, view shares (no writes)  |
 
 Sign in as Folake to confirm the draft document is hidden and the upload button is gone — that restriction is enforced by the database, not just the interface.
+
+## Account creation (no public sign-up — by design)
+
+This is a document management system, so there is **no open registration**: a stranger should never be able to create their own account and land in the company's workspace. Instead, accounts are **provisioned by administrators** — the realistic model for a DMS.
+
+An admin opens the **Users** screen, clicks **Add user**, and sets the person's name, email, temporary password, role, and department. That request is handled by a Supabase **Edge Function** (`admin-create-user`) that runs on the server: it verifies the caller is an admin, validates the input, creates the auth account with the service-role key, and writes an audit entry. The service-role key stays server-side the entire time — it is never exposed to the browser, which is why creating users goes through a function rather than a direct client call.
+
+Sign in as **adunni@procuredesk.demo** to see the Users screen; it is hidden for editors and viewers.
 
 ## How security works (worth understanding for the report)
 

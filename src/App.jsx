@@ -3,14 +3,14 @@ import {
   Search, FolderClosed, FolderOpen, Plus, ChevronRight, ChevronDown, Clock, User, Tag, X, Check,
   Shield, ArrowLeft, Upload, FileText, FileSpreadsheet, FileImage, ListChecks, History,
   Share2, LayoutDashboard, Eye, Download, CornerDownRight, Activity, AlertCircle,
-  TrendingUp, HardDrive, LogOut, Folder, CheckCircle2
+  TrendingUp, HardDrive, LogOut, Folder, CheckCircle2, Users, UserPlus
 } from "lucide-react";
 import { DEPTS, ROLE_RANK, ROLE_LABEL, FILE_KINDS, DEMO_LOGINS } from "./data.js";
 import {
   signIn, signOut, getSessionProfile, onAuthChange,
   fetchProfiles, fetchFolders, fetchDocuments, fetchAudit,
   logAudit, incrementViews, createDocument, publishDocument,
-  addVersion, shareDocument, getDownloadUrl,
+  addVersion, shareDocument, getDownloadUrl, adminCreateUser,
 } from "./api.js";
 
 const kindIcon = (kind, size = 16) => {
@@ -111,6 +111,7 @@ function DMS({ user, onLogout }) {
   const [selected, setSelected] = useState(null);
   const [showUpload, setShowUpload] = useState(false);
   const [showShare, setShowShare] = useState(null);
+  const [showCreateUser, setShowCreateUser] = useState(false);
   const [toast, setToast] = useState("");
 
   const can = (lvl) => ROLE_RANK[user.role] >= ROLE_RANK[lvl];
@@ -165,6 +166,11 @@ function DMS({ user, onLogout }) {
         <button style={{ ...S.navItem, ...(view === "dashboard" ? S.navActive : {}) }} onClick={() => { setView("dashboard"); setSelected(null); }}>
           <LayoutDashboard size={15} /> Dashboard
         </button>
+        {can("admin") && (
+          <button style={{ ...S.navItem, ...(view === "users" ? S.navActive : {}) }} onClick={() => { setView("users"); setSelected(null); }}>
+            <Users size={15} /> Users
+          </button>
+        )}
 
         <div style={S.navSection}>FOLDERS</div>
         <div style={S.folderTree}>
@@ -207,6 +213,8 @@ function DMS({ user, onLogout }) {
       <main style={S.main}>
         {view === "dashboard" ? (
           <Dashboard docs={docs} audit={audit} folders={folders} />
+        ) : view === "users" ? (
+          <UsersScreen profiles={profiles} currentUser={user} onCreate={() => setShowCreateUser(true)} />
         ) : selected ? (
           <DocDetail doc={selected} user={user} can={can} folderName={folderName} profiles={profiles}
             onBack={() => setSelected(null)}
@@ -313,6 +321,15 @@ function DMS({ user, onLogout }) {
           if (selected?.id === showShare.id) setSelected(fresh.find(x => x.id === showShare.id) || null);
           setShowShare(null);
           flash(`Shared with ${name}.`);
+        }} />}
+      {showCreateUser && <CreateUserModal onClose={() => setShowCreateUser(false)}
+        onCreate={async (form) => {
+          await adminCreateUser(form);
+          await log("created user", `${form.name} (${form.role})`);
+          setProfiles(await fetchProfiles());
+          setAudit(await fetchAudit());
+          setShowCreateUser(false);
+          flash(`User ${form.name} created.`);
         }} />}
       {toast && <div style={S.toast}><Check size={15} /> {toast}</div>}
     </div>
@@ -547,6 +564,118 @@ function ShareModal({ doc, profiles, onClose, onShare }) {
   );
 }
 
+// ─── Users management (admin only) ───────────────────────────
+function UsersScreen({ profiles, currentUser, onCreate }) {
+  return (
+    <div>
+      <header style={S.header}>
+        <div><div style={S.crumb}>Workspace</div><h1 style={S.h1}>Users</h1></div>
+        <button style={S.primary} onClick={onCreate}><UserPlus size={15} /> Add user</button>
+      </header>
+      <p style={{ ...S.sub, marginTop: -8, marginBottom: 18 }}>Accounts are provisioned by administrators. New users are created with a role and department, then sign in with their email and password.</p>
+      <table style={S.table}>
+        <thead>
+          <tr>
+            <th style={S.th}>Name</th>
+            <th style={{ ...S.th, width: 140 }}>Role</th>
+            <th style={{ ...S.th, width: 160 }}>Department</th>
+          </tr>
+        </thead>
+        <tbody>
+          {profiles.map(u => {
+            const d = DEPTS.find(x => x.id === u.dept);
+            return (
+              <tr key={u.id} style={{ borderBottom: `1px solid ${LINE}88` }}>
+                <td style={S.td}>
+                  <div style={S.nameCell}>
+                    <span style={{ ...S.avatarSm, background: d?.color || "#999" }}>{u.initials}</span>
+                    <div>
+                      <div style={S.docTitle}>{u.name}{u.id === currentUser.id && <span style={S.youTag}>you</span>}</div>
+                    </div>
+                  </div>
+                </td>
+                <td style={S.td}><span style={{ ...S.roleBadge, ...roleBadgeStyle(u.role) }}>{ROLE_LABEL[u.role]}</span></td>
+                <td style={{ ...S.td, color: "#6B5C4A" }}>{d?.name || u.dept}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function roleBadgeStyle(role) {
+  if (role === "admin") return { color: "#9A3412", background: "#9A341212", borderColor: "#9A341244" };
+  if (role === "editor") return { color: "#1D4E89", background: "#1D4E8912", borderColor: "#1D4E8944" };
+  return { color: "#6B5C4A", background: "#6B5C4A12", borderColor: "#6B5C4A44" };
+}
+
+function CreateUserModal({ onClose, onCreate }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState("viewer");
+  const [dept, setDept] = useState("sourcing");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const ok = name.trim() && email.trim() && password.length >= 8;
+
+  const submit = async () => {
+    if (!ok || busy) return;
+    setBusy(true); setErr("");
+    try {
+      await onCreate({ name: name.trim(), email: email.trim(), password, role, dept });
+    } catch (e) {
+      setErr(e.message || "Could not create user.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={S.overlay} onClick={onClose}>
+      <div style={S.modal} className="pop" onClick={e => e.stopPropagation()}>
+        <div style={S.modalHead}><h2 style={S.modalTitle}>Add user</h2><button style={S.iconBtn} onClick={onClose}><X size={17} /></button></div>
+        <p style={{ fontSize: 13, color: "#7A6A58", marginTop: -6, marginBottom: 8 }}>Create an account and assign its role. The person signs in with the email and password you set here.</p>
+
+        <label style={S.lbl}>Full name</label>
+        <input style={S.input} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Chidi Okafor" />
+
+        <label style={S.lbl}>Email</label>
+        <input style={S.input} value={email} onChange={e => setEmail(e.target.value)} placeholder="person@company.com" />
+
+        <label style={S.lbl}>Temporary password</label>
+        <input style={S.input} type="text" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" />
+
+        <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <label style={S.lbl}>Role</label>
+            <select style={S.input} value={role} onChange={e => setRole(e.target.value)}>
+              <option value="viewer">Viewer — read only</option>
+              <option value="editor">Editor — upload & manage</option>
+              <option value="admin">Administrator — full control</option>
+            </select>
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={S.lbl}>Department</label>
+            <select style={S.input} value={dept} onChange={e => setDept(e.target.value)}>
+              {DEPTS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {err && <p style={{ fontSize: 12.5, color: "#B91C1C", marginTop: 12, marginBottom: 0 }}>{err}</p>}
+
+        <div style={S.modalActions}>
+          <button style={S.ghost} onClick={onClose} disabled={busy}>Cancel</button>
+          <button style={{ ...S.primary, opacity: ok && !busy ? 1 : .5, pointerEvents: ok && !busy ? "auto" : "none" }} onClick={submit}>{busy ? "Creating…" : "Create user"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Dashboard ───────────────────────────────────────────────
 function Dashboard({ docs, audit, folders }) {
   const published = docs.filter(d => d.status === "published");
@@ -686,6 +815,8 @@ const S = {
   docTitle: { fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   docSummary: { fontSize: 12, color: MUTE, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 420 },
   typeBadge: { fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 6, border: "1px solid" },
+  roleBadge: { fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20, border: "1px solid" },
+  youTag: { fontSize: 10.5, fontWeight: 600, color: "#1F6F54", background: "#1F6F5415", border: "1px solid #1F6F5440", padding: "1px 7px", borderRadius: 20, marginLeft: 8 },
   draftTag: { fontSize: 10.5, fontWeight: 600, color: "#A16207", background: "#A1620715", border: "1px solid #A1620740", padding: "1px 7px", borderRadius: 20 },
 
   empty: { display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "70px 0", color: MUTE, fontSize: 14 },

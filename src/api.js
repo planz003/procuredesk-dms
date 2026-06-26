@@ -1,6 +1,6 @@
 import { supabase } from "./supabase.js";
 
-// ── Auth 
+// ── Auth ─────────────────────────────────────────────────────
 export async function signIn(email, password) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
@@ -24,7 +24,7 @@ export function onAuthChange(cb) {
   return supabase.auth.onAuthStateChange((_e, session) => cb(session));
 }
 
-// ── Reads 
+// ── Reads ────────────────────────────────────────────────────
 export async function fetchProfiles() {
   const { data, error } = await supabase.from("profiles").select("*").order("name");
   if (error) throw error;
@@ -126,4 +126,21 @@ export async function getDownloadUrl(storage_path) {
     .from("documents").createSignedUrl(storage_path, 60);
   if (error) throw error;
   return data.signedUrl;
+}
+
+// ── Admin: create a user via the secure Edge Function ────────
+// The function runs server-side with the service-role key and
+// verifies the caller is an admin before creating anything.
+export async function adminCreateUser({ email, password, name, role, dept }) {
+  const { data, error } = await supabase.functions.invoke("admin-create-user", {
+    body: { email, password, name, role, dept },
+  });
+  if (error) {
+    // Surface the function's own error message if present
+    let msg = error.message;
+    try { const ctx = await error.context?.json(); if (ctx?.error) msg = ctx.error; } catch { /* ignore */ }
+    throw new Error(msg);
+  }
+  if (data?.error) throw new Error(data.error);
+  return data;
 }
